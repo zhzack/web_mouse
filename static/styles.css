@@ -1,0 +1,53 @@
+body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+#touchpad {
+    width: 100vw;
+    height: 80vh;
+    background-color: #eee;
+    position: relative;
+}
+
+#controls {
+    display: flex;
+    align-items: center;
+    height: 20vh; /* 控制条的高度 */
+    width: 100vw; /* 控制条宽度填满 */
+}
+
+.control-button {
+    flex: 1; /* 按钮宽度自动填充剩余空间 */
+    height: 100%; /* 按钮高度 */
+    background-color: #007BFF; /* 按钮背景颜色 */
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none; /* 防止文本选择 */
+}
+
+.control-button:hover {
+    background-color: #0056b3; /* 鼠标悬停效果 */
+}
+
+#middleSliderContainer {
+    position: relative;
+    height: 100%; /* 让容器填满高度 */
+    width: 100px; /* 操作杆的宽度 */
+}
+
+.joystick {
+    width: 30px; /* 操作杆的宽度 */
+    height: 100px; /* 操作杆的高度 */
+    background-color: #007BFF; /* 操作杆颜色 */
+    border-radius: 15px; /* 圆角 */
+    position: absolute;
+    left: 50%; /* 居中 */
+    transform: translateX(-50%); /* 使其真正居中 */
+    cursor: pointer;
+}
