@@ -4,23 +4,24 @@
 <head>
     <meta charset="UTF-8">
     <title>触控板</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 
 <body>
     <div id="touchpad"></div>
-    <div id="controls">
+    <!-- <div id="controls">
         <div id="leftButton" class="control-button">左键</div>
         <div id="middleSliderContainer">
             <div id="joystick" class="joystick"></div>
         </div>
         <div id="rightButton" class="control-button">右键</div>
-        <!-- <div class="control-button" id="extraButton1">功能键1</div>
-        <div class="control-button" id="extraButton2">功能键2</div> -->
+        <div class="control-button" id="extraButton1">功能键1</div>
+        <div class="control-button" id="extraButton2">功能键2</div> 
+        -->
     </div>
 
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 
 </html>

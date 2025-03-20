@@ -1,42 +1,33 @@
-from flask import Blueprint, request, jsonify, render_template
-import socket
-import threading
-import config
+from flask import Flask, render_template
+from flask_sock import Sock
+from touchpad_analyzer import TouchPadAnalyzer
 
-main_routes = Blueprint('main', __name__)
+app = Flask(__name__)
+sock = Sock(app)
 
-# 启动 UDP 监听
-def udp_listener():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((config.UDP_IP, config.UDP_PORT))
-    while True:
-        data, addr = sock.recvfrom(1024)
-        print("Received message:", data.decode(), "from", addr)
+clients = set()  # 存储所有已连接的客户端
 
-# 启动 UDP 监听线程
-threading.Thread(target=udp_listener, daemon=True).start()
 
-@main_routes.route('/')
+@app.route('/')
 def index():
     return render_template('index.html')
 
-@main_routes.route('/heartbeat', methods=['GET'])
-def heartbeat():
-    return jsonify({'status': 'success', 'message': 'Heartbeat received'})
+@sock.route('/ws')
+def websocket(ws):
+    clients.add(ws)
+    try:
+        while True:
+            data = ws.receive()
+            if data:
+                # print('收到的数据:', data)
+                ta.process_data(data)
+                # 可以在这里处理数据或广播给所有客户端
+    except Exception as e:
+        print('WebSocket 连接关闭或出现错误:', e)
+    finally:
+        clients.discard(ws)
 
-@main_routes.route('/action', methods=['POST'])
-def handle_action():
-    data = request.json  # 获取 JSON 数据
-    action = data.get('action')
-    details = data.get('details')
-    print('Action received:', action, details)
 
-    # 发送 UDP 消息
-    send_udp(action, details)
-
-    return jsonify({'status': 'success', 'message': 'Action received'})
-
-def send_udp(action, details=None):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    message = f"{action}: {details}" if details else action
-    sock.sendto(message.encode(), (config.UDP_IP, config.UDP_PORT))
+if __name__ == '__main__':
+    ta = TouchPadAnalyzer()
+    app.run(debug=True,host='0.0.0.0', port=5000)
