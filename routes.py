@@ -19,7 +19,7 @@ def websocket(ws):
         while True:
             data = ws.receive()
             if data:
-                # print('收到的数据:', data)
+                print('收到的数据:', data)
                 ta.process_data(data)
                 # 可以在这里处理数据或广播给所有客户端
     except Exception as e:
