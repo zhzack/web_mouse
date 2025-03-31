@@ -2,22 +2,16 @@
 let socket;
 let reconnectInterval = 1000;
 let maxReconnectInterval = 10000;
-
-// {
-//     "t": "事件类型 (如 'ts' 表示 touchstart, 'tm' 表示 touchmove, 'te' 表示 touchend, 'ck' 表示点击, 'ms' 表示滑块移动)",
-//     "ts": "时间戳 (毫秒)",
-//     "pts": [
-//         {"id": 触摸点ID, "x": X坐标(小数保留3位), "y": Y坐标(小数保留3位)}
-//     ],
-//     "btn": "点击事件的按钮类型 ('l' 表示左键, 'r' 表示右键)"
-// }
+let isReconnecting = false; // 防止多次重连
 
 function connectWebSocket() {
-    socket = new WebSocket('ws://' + window.location.host + '/ws');
+    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    socket = new WebSocket(protocol + window.location.host + '/ws');
 
     socket.onopen = () => {
         console.log('WebSocket 连接已建立');
         reconnectInterval = 1000;
+        isReconnecting = false;
     };
 
     socket.onmessage = (event) => {
@@ -25,8 +19,14 @@ function connectWebSocket() {
     };
 
     socket.onclose = () => {
+        if (isReconnecting) return;
+        isReconnecting = true;
         console.log('WebSocket 连接已关闭，尝试重连...');
-        setTimeout(connectWebSocket, reconnectInterval);
+        clearTouchPoints(); // 清理触摸点状态
+        setTimeout(() => {
+            isReconnecting = false;
+            connectWebSocket();
+        }, reconnectInterval);
         reconnectInterval = Math.min(reconnectInterval * 2, maxReconnectInterval);
     };
 
@@ -42,6 +42,11 @@ const touchpad = document.getElementById('touchpad');
 let touchPoints = {};
 
 function sendAction(t, pts = [], btn = null) {
+    if (!Array.isArray(pts) || pts.some(p => typeof p.id !== 'number' || typeof p.x !== 'number' || typeof p.y !== 'number')) {
+        console.warn('发送的数据格式无效:', pts);
+        return;
+    }
+
     const data = {
         t: t,
         ts: Date.now(),
@@ -65,23 +70,33 @@ touchpad.addEventListener('touchstart', (event) => {
     for (let touch of event.changedTouches) {
         touchPoints[touch.identifier] = { x: touch.clientX, y: touch.clientY };
     }
-    sendAction('ts', Object.keys(touchPoints).map(id => ({ id: Number(id), ...touchPoints[id] })));
+    const uniquePoints = Object.keys(touchPoints).map(id => ({ id: Number(id), ...touchPoints[id] }));
+    sendAction('ts', uniquePoints);
     event.preventDefault();
-});
+}, { passive: true }); // 设置为被动监听器
 
 touchpad.addEventListener('touchmove', (event) => {
     for (let touch of event.changedTouches) {
         touchPoints[touch.identifier] = { x: touch.clientX, y: touch.clientY };
     }
-    sendAction('tm', Object.keys(touchPoints).map(id => ({ id: Number(id), ...touchPoints[id] })));
+    const uniquePoints = Object.keys(touchPoints).map(id => ({ id: Number(id), ...touchPoints[id] }));
+    sendAction('tm', uniquePoints);
     event.preventDefault();
-});
+}, { passive: true }); // 设置为被动监听器
 
 touchpad.addEventListener('touchend', (event) => {
+    const endedTouches = [];
     for (let touch of event.changedTouches) {
+        endedTouches.push({ id: touch.identifier, x: touch.clientX, y: touch.clientY });
         delete touchPoints[touch.identifier];
     }
-    sendAction('te', Object.keys(touchPoints).map(id => ({ id: Number(id), ...touchPoints[id] })));
+    const uniquePoints = Object.keys(touchPoints).map(id => ({ id: Number(id), ...touchPoints[id] }));
+    sendAction('te', endedTouches);
+
+    // 如果没有触摸点了，清零 touchPoints
+    if (Object.keys(touchPoints).length === 0) {
+        clearTouchPoints();
+    }
     event.preventDefault();
 });
 
@@ -93,36 +108,55 @@ document.getElementById('rightButton').addEventListener('click', () => {
     sendAction('ck', [], 'r');
 });
 
-const joystick = document.getElementById('joystick');
-let isDragging = false;
-joystick.addEventListener('mousedown', () => isDragging = true);
-document.addEventListener('mouseup', () => isDragging = false);
-document.addEventListener('mousemove', (event) => {
-    if (!isDragging) return;
-    const container = joystick.parentElement;
-    const containerRect = container.getBoundingClientRect();
-    const joystickHeight = joystick.offsetHeight;
-    let newY = event.clientY - containerRect.top - joystickHeight / 2;
-    newY = Math.max(0, Math.min(newY, container.offsetHeight - joystickHeight));
-    joystick.style.bottom = `${container.offsetHeight - newY - joystickHeight}px`;
-    const value = Math.round(((container.offsetHeight - newY - joystickHeight) / (container.offsetHeight - joystickHeight)) * 200 - 100);
-    sendAction('ms', [{ id: 0, x: 0, y: value }]);
-});
-
-joystick.addEventListener('dblclick', () => {
-    const container = joystick.parentElement;
-    const containerHeight = container.offsetHeight;
-    const joystickHeight = joystick.offsetHeight;
-    const middlePosition = (containerHeight - joystickHeight) / 2;
-    joystick.style.bottom = `${middlePosition}px`;
-    sendAction('ms', [{ id: 0, x: 0, y: 0 }]);
-});
-
 window.onload = () => {
-    const container = document.getElementById('middleSliderContainer');
     const joystick = document.getElementById('joystick');
+    if (!joystick) {
+        console.error("Joystick 元素未找到");
+        return;
+    }
+
+    const container = document.getElementById('middleSliderContainer');
     const containerHeight = container.offsetHeight;
     const joystickHeight = joystick.offsetHeight;
     const middlePosition = (containerHeight - joystickHeight) / 2;
     joystick.style.bottom = `${middlePosition}px`;
+
+    let isDragging = false;
+    let lastSentTime = 0;
+    const throttleInterval = 50; // 限制每 50ms 发送一次消息
+
+    joystick.addEventListener('mousedown', () => isDragging = true);
+    document.addEventListener('mouseup', () => isDragging = false);
+    document.addEventListener('mousemove', (event) => {
+        if (!isDragging) return;
+
+        const now = Date.now();
+        if (now - lastSentTime < throttleInterval) return; // 节流逻辑
+        lastSentTime = now;
+
+        const containerRect = container.getBoundingClientRect();
+        let newY = event.clientY - containerRect.top - joystickHeight / 2;
+        newY = Math.max(0, Math.min(newY, container.offsetHeight - joystickHeight)); // 限制范围
+
+        joystick.style.bottom = `${container.offsetHeight - newY - joystickHeight}px`;
+
+        const value = Math.round(((container.offsetHeight - newY - joystickHeight) / (container.offsetHeight - joystickHeight)) * 200 - 100);
+        sendAction('ms', [{ id: 0, x: 0, y: value }]);
+    });
+
+    joystick.addEventListener('dblclick', () => {
+        joystick.style.bottom = `${middlePosition}px`;
+        sendAction('ms', [{ id: 0, x: 0, y: 0 }]);
+    });
 };
+
+// 清理全局变量 touchPoints
+function clearTouchPoints() {
+    touchPoints = {};
+    console.log("触摸点状态已清理");
+}
+
+// 页面卸载时清理全局变量
+window.addEventListener('beforeunload', () => {
+    clearTouchPoints();
+});

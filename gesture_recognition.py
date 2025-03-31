@@ -61,49 +61,135 @@ def detect_move(p1, p2, prev_p1, prev_p2):
         return f"Move with direction: {direction}°"
     return None
 
+# 检测滑动手势的方向（支持两指到五指以上）。
+# 返回八个方向之一：上、下、左、右、左上、右上、左下、右下。
+
+
+def detect_swipe(trajectories):
+    """
+    检测滑动手势的方向（支持两指到五指以上）。
+    返回八个方向之一：上、下、左、右、左上、右上、左下、右下。
+    """
+    avg_dx, avg_dy = _calculate_average_movement(trajectories)
+
+    if abs(avg_dx) < 10 and abs(avg_dy) < 10:
+        return None  # 移动距离太小，忽略
+
+    angle = math.degrees(math.atan2(-avg_dy, avg_dx))  # 修正上下方向
+    if -22.5 <= angle < 22.5:
+        return "右滑"
+    elif 22.5 <= angle < 67.5:
+        return "右上滑"
+    elif 67.5 <= angle < 112.5:
+        return "上滑"
+    elif 112.5 <= angle < 157.5:
+        return "左上滑"
+    elif 157.5 <= angle or angle < -157.5:
+        return "左滑"
+    elif -157.5 <= angle < -112.5:
+        return "左下滑"
+    elif -112.5 <= angle < -67.5:
+        return "下滑"
+    elif -67.5 <= angle < -22.5:
+        return "右下滑"
+    return None
+
+# 检测旋转手势（顺时针或逆时针）。
+
+
+def detect_rotation(trajectories):
+    if len(trajectories) < 2:
+        return None  # 至少需要两指进行旋转检测
+
+    # 计算两指的初始和最终角度
+    finger_1 = trajectories[0]
+    finger_2 = trajectories[1]
+
+    start_angle = math.atan2(finger_2[0][1] - finger_1[0][1], finger_2[0][0] - finger_1[0][0])
+    end_angle = math.atan2(finger_2[-1][1] - finger_1[-1][1], finger_2[-1][0] - finger_1[-1][0])
+
+    angle_diff = math.degrees(end_angle - start_angle)
+
+    if abs(angle_diff) > 15:  # 旋转角度阈值
+        if angle_diff > 0:
+            return "顺时针旋转"
+        else:
+            return "逆时针旋转"
+    return None
+
 # 多指手势识别函数
 
 
-def multi_touch_gesture_recognition(data_array):
-    if len(data_array) < 2:
-        return "Insufficient data for recognition."
+def multi_touch_gesture_recognition(touch_points):
+    """
+    根据多指触摸点的集合综合判断输入的动作。
+    支持两指到五指以上的八个方向滑动，以及顺时针和逆时针旋转。
+    """
+    try:
+        if not touch_points or len(touch_points[0]) < 1:  # 修正手指数量判断
+            return "未知手势"
 
-    # 获取最后两个数据
-    prev_points, points = data_array[-2], data_array[-1]
+        # 计算每帧的触摸点数量
+        num_fingers = len(touch_points[0])  # 假设每帧的触摸点数量一致
+        print(f"手势识别: 当前帧手指数量: {num_fingers}")
 
-    if len(points) != len(prev_points):
-        return "Error: The number of points must match."
+        # 提取所有触摸点的轨迹
+        trajectories = {i: [] for i in range(num_fingers)}
+        for frame in touch_points:
+            for i, point in enumerate(frame):
+                trajectories[i].append((point['x'], point['y']))
 
-    gestures = []
-
-    for i in range(len(points)):
-        p1 = points[i]
-        p2 = points[(i + 1) % len(points)]
-
-        prev_p1 = prev_points[i]
-        prev_p2 = prev_points[(i + 1) % len(prev_points)]
-
-        # 检测捏合手势
-        pinch = detect_pinch(p1, p2, prev_p1, prev_p2)
-        if pinch:
-            gestures.append(pinch)
+        # 检测滑动手势
+        swipe_result = detect_swipe(trajectories)
+        if swipe_result:
+            return f"{num_fingers}指{swipe_result}"
 
         # 检测旋转手势
-        rotation = detect_rotation(p1, p2, prev_p1, prev_p2)
-        if rotation:
-            gestures.append(rotation)
+        rotation_result = detect_rotation(trajectories)
+        if rotation_result:
+            return rotation_result
 
-        # 检测移动手势
-        move = detect_move(p1, p2, prev_p1, prev_p2)
-        if move:
-            gestures.append(move)
+        return "未知手势"
+    except Exception as e:
+        print(f"multi_touch_gesture_recognition 错误: {e}")
+        raise  # 重新抛出异常以便进一步调试
 
-    return gestures
+
+def _calculate_distance(point1, point2):
+    """计算两点之间的欧几里得距离"""
+    return ((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2) ** 0.5
+
+
+def _calculate_average_movement(trajectories):
+    """
+    计算所有触摸点的平均移动向量。
+    
+    参数:
+        trajectories (dict): 每个触摸点的轨迹字典。
+    
+    返回:
+        tuple: 平均移动向量 (dx, dy)。
+    """
+    total_dx, total_dy = 0, 0
+    num_points = 0
+
+    for trajectory in trajectories.values():
+        start_x, start_y = trajectory[0]
+        end_x, end_y = trajectory[-1]
+        total_dx += end_x - start_x
+        total_dy += end_y - start_y
+        num_points += 1
+
+    return total_dx / num_points, total_dy / num_points
 
 
 if __name__ == '__main__':
-    data_array = [[{'id': 0, 'x': 191.132, 'y': 697.75}, {'id': 1, 'x': 250.573, 'y': 530.609}], [{'id': 0, 'x': 191.132, 'y': 697.75}, {'id': 1, 'x': 251.445, 'y': 530.847}], [{'id': 0, 'x': 194.78, 'y': 698.98}, {'id': 1, 'x': 256.918, 'y': 532.592}], [{'id': 0, 'x': 198.666, 'y': 700.368}, {'id': 1, 'x': 261.041, 'y': 533.9}], [{'id': 0, 'x': 203.345, 'y': 702.311}, {'id': 1, 'x': 265.483, 'y': 535.408}], [{'id': 0, 'x': 210.84, 'y': 707.069}, {'id': 1, 'x': 272.462, 'y': 539.254}], [{'id': 0, 'x': 214.329, 'y': 709.687}, {'id': 1, 'x': 275.872, 'y': 541.593}], [{'id': 0, 'x': 220.753, 'y': 714.326}, {'id': 1, 'x': 283.842, 'y': 546.907}], [{'id': 0, 'x': 224.044, 'y': 716.467}, {'id': 1, 'x': 287.53, 'y': 549.564}], [{'id': 0, 'x': 231.023, 'y': 720.909}, {'id': 1, 'x': 296.611, 'y': 554.838}], [{'id': 0, 'x': 235.346, 'y': 723.169}, {'id': 1, 'x': 300.616, 'y': 557.296}], [
-        {'id': 0, 'x': 239.47, 'y': 725.23}, {'id': 1, 'x': 304.304, 'y': 559.597}], [{'id': 0, 'x': 246.488, 'y': 728.205}, {'id': 1, 'x': 311.68, 'y': 563.562}], [{'id': 0, 'x': 249.978, 'y': 729.315}, {'id': 1, 'x': 315.645, 'y': 564.513}], [{'id': 0, 'x': 258.385, 'y': 731.1}, {'id': 1, 'x': 325.677, 'y': 566.02}], [{'id': 0, 'x': 262.786, 'y': 731.694}, {'id': 1, 'x': 330.356, 'y': 566.377}], [{'id': 0, 'x': 270.757, 'y': 732.21}, {'id': 1, 'x': 338.724, 'y': 566.893}], [{'id': 0, 'x': 274.365, 'y': 732.289}, {'id': 1, 'x': 343.046, 'y': 567.011}], [{'id': 0, 'x': 277.657, 'y': 732.448}, {'id': 1, 'x': 347.923, 'y': 567.091}], [{'id': 0, 'x': 285.429, 'y': 733.875}, {'id': 1, 'x': 356.766, 'y': 567.369}], [{'id': 0, 'x': 289.434, 'y': 734.946}, {'id': 1, 'x': 360.374, 'y': 567.765}], [{'id': 0, 'x': 292.923, 'y': 735.779}, {'id': 1, 'x': 366.164, 'y': 569.113}]]
+    data_array = [
+        [{'id': 0, 'x': 100, 'y': 100}, {'id': 1, 'x': 200, 'y': 100}],
+        [{'id': 0, 'x': 110, 'y': 110}, {'id': 1, 'x': 210, 'y': 110}],
+        [{'id': 0, 'x': 120, 'y': 120}, {'id': 1, 'x': 220, 'y': 120}],
+        [{'id': 0, 'x': 130, 'y': 130}, {'id': 1, 'x': 230, 'y': 130}],
+    ]
 
     gestures = multi_touch_gesture_recognition(data_array)
     print(gestures)
